@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ISP Histogram Demo</title>
+    <style>
+      body {
+        display: grid;
+        place-items: center; /* Căn giữa cả 2 chiều */
+        min-height: 100vh; /* Chiều cao full màn hình */
+        margin: 0;
+        background-color: #222;
+      }
+      .wrapper {
+        display: grid;
+        grid-template-columns: auto auto;
+        justify-content: center;
+        align-items: center;
+        height: 100%;
+        gap: 20px;
+      }
+      .container {
+        position: relative;
+      }
+      canvas {
+        display: block;
+      }
+      h3 {
+        color: white;
+        text-align: center;
+        position: absolute;
+        top: -30px;
+        width: 100%;
+        margin: 0;
+        font-family: sans-serif;
+      }
+      .toolbar {
+        display: flex;
+        gap: 10px;
+        justify-content: center;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+      }
+
+      .toolbar button {
+        background-color: #333;
+        color: #fff;
+        border: 1px solid #555;
+        padding: 8px 16px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-family: sans-serif;
+        font-size: 14px;
+        transition: all 0.2s ease;
+      }
+
+      .toolbar button:hover {
+        background-color: #555;
+        border-color: #777;
+      }
+
+      .toolbar button:active {
+        transform: translateY(1px);
+        background-color: #007bff;
+        border-color: #007bff;
+      }
+      .input-group {
+        display: flex;
+      }
+
+      .input-group button {
+        border-top-right-radius: 0;
+        border-bottom-right-radius: 0;
+        border-right: none;
+      }
+
+      .input-group input {
+        background-color: #222;
+        border: 1px solid #555;
+        color: #fff;
+        padding: 8px;
+        width: 80px;
+        border-radius: 0 4px 4px 0;
+        outline: none;
+        font-family: sans-serif;
+      }
+
+      .input-group input:focus {
+        border-color: #007bff;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrapper">
+      <div class="container">
+        <h3>Luminository method</h3>
+        <canvas id="lumCanvas"></canvas>
+      </div>
+
+      <div class="container">
+        <h3>Weighted method</h3>
+        <canvas id="weightedCanvas"></canvas>
+      </div>
+
+      <div class="container">
+        <h3>Average method</h3>
+        <canvas id="averageCanvas"></canvas>
+      </div>
+
+      <div class="container">
+        <h3>Original</h3>
+        <canvas id="originalCanvas"></canvas>
+        <canvas
+          id="histogram"
+          style="position: absolute; top: 0; left: 0; pointer-events: none"
+        ></canvas>
+      </div>
+    </div>
+
+    <div class="toolbar">
+      <button onclick="btnToggle(1)">1</button>
+      <button onclick="btnToggle(2)">2</button>
+      <button onclick="btnToggle(3)">3</button>
+
+      <div class="input-group">
+        <button onclick="btnToggle(4)">4</button>
+        <input
+          type="number"
+          id="thresholdInput"
+          value="120"
+          placeholder="0-255"
+        />
+      </div>
+    </div>
+
+    <video id="video" width="0" height="0" style="display: none"></video>
+
+    <script>
+      /// <reference path="https://cdn.jsdelivr.net/npm/@types/p5/index.d.ts"
+      let width = 400;
+      let height = 300;
+
+      let video = document.getElementById("video");
+      let threshholdElm = document.getElementById("thresholdInput");
+      // Luminository Canvas
+      let lumCanvas = document.getElementById("lumCanvas");
+      let lumContext = lumCanvas.getContext("2d");
+      lumCanvas.width = width;
+      lumCanvas.height = height;
+
+      // Weighted Canvas
+      let weightedCanvas = document.getElementById("weightedCanvas");
+      let weightedContext = weightedCanvas.getContext("2d");
+      weightedCanvas.width = width;
+      weightedCanvas.height = height;
+
+      // Average Canvas
+      let averageCanvas = document.getElementById("averageCanvas");
+      let averageContext = averageCanvas.getContext("2d");
+      averageCanvas.width = width;
+      averageCanvas.height = height;
+
+      // Original Canvas
+      let originalCanvas = document.getElementById("originalCanvas");
+      let originalContext = originalCanvas.getContext("2d");
+      originalCanvas.width = width;
+      originalCanvas.height = height;
+
+      let histCanvas = document.getElementById("histogram");
+      let histContext = histCanvas.getContext("2d");
+      histCanvas.width = width;
+      histCanvas.height = height;
+
+      navigator.mediaDevices
+        .getUserMedia({ video: true })
+        .then(function (stream) {
+          video.srcObject = stream;
+          video.play();
+          requestAnimationFrame(draw);
+        });
+
+      let lumHist = new Array(256).fill(0);
+      let weightedHist = new Array(256).fill(0);
+      let averageHist = new Array(256).fill(0);
+      let rHist = new Array(256).fill(0);
+      let gHist = new Array(256).fill(0);
+      let bHist = new Array(256).fill(0);
+      let f1 = false;
+      let f2 = false;
+      let f3 = false;
+      let f4 = false;
+      function btnToggle(value) {
+        switch (value) {
+          case 1:
+            f2 = false;
+            f3 = false;
+            f4 = false;
+            f1 = !f1;
+            break;
+          case 2:
+            f1 = false;
+            f3 = false;
+            f4 = false;
+            f2 = !f2;
+            break;
+          case 3:
+            f2 = false;
+            f1 = false;
+            f4 = false;
+            f3 = !f3;
+            break;
+          case 4:
+            f2 = false;
+            f3 = false;
+            f1 = false;
+            f4 = !f4;
+            break;
+        }
+      }
+      function draw() {
+        if (video.readyState === video.HAVE_ENOUGH_DATA) {
+          rHist.fill(0);
+          gHist.fill(0);
+          bHist.fill(0);
+          lumHist.fill(0);
+          weightedHist.fill(0);
+          averageHist.fill(0);
+          histContext.clearRect(0, 0, histCanvas.width, histCanvas.height);
+
+          originalContext.drawImage(video, 0, 0, width, height);
+
+          let originalData = originalContext.getImageData(0, 0, width, height);
+          let lumData = lumContext.createImageData(width, height);
+          let weightedData = weightedContext.createImageData(width, height);
+          let averageData = averageContext.createImageData(width, height);
+
+          let originalRes = originalData.data;
+          let lumRes = lumData.data;
+          let weightedRes = weightedData.data;
+          let averageRes = averageData.data;
+
+          for (let i = 0; i < originalRes.length; i += 4) {
+            let r = originalRes[i];
+            let g = originalRes[i + 1];
+            let b = originalRes[i + 2];
+            let a = originalRes[i + 3];
+            // RGB Historgram
+            rHist[r]++;
+            gHist[g]++;
+            bHist[b]++;
+            // Formulars
+            let lumFormula = 0.2126 * r + 0.7152 * g + 0.0722;
+            let weightedFormula = 0.299 * r + 0.587 * g + 0.114 * b;
+            let averageFormula = (r + g + b) / 3;
+
+            // Luminository Method Historgram
+            lumHist[Math.floor(r + g + b)]++;
+            lumRes[i] = r;
+            lumRes[i + 1] = g;
+            lumRes[i + 2] = b;
+            lumRes[i + 3] = a;
+            // Weighted Method Histogram
+            weightedHist[Math.floor(r + g + b)]++;
+            weightedRes[i] = r;
+            weightedRes[i + 1] = g;
+            weightedRes[i + 2] = b;
+            weightedRes[i + 3] = a;
+            // Average Method Histogram
+            averageHist[Math.floor(r + g + b)]++;
+            averageRes[i] = r;
+            averageRes[i + 1] = g;
+            averageRes[i + 2] = b;
+            averageRes[i + 3] = a;
+
+            if (f1) {
+              // Luminository method & Gray Historgram
+              lumHist[Math.floor(lumFormula)]++;
+              lumRes[i] = lumRes[i + 1] = lumRes[i + 2] = lumFormula;
+              lumRes[i + 3] = a;
+              // Weighted method & Gray Histogram
+              weightedHist[Math.floor(weightedFormula)]++;
+              weightedRes[i] =
+                weightedRes[i + 1] =
+                weightedRes[i + 2] =
+                  weightedFormula;
+              // Average method & Gray Histogram
+              averageHist[Math.floor(averageFormula)]++;
+              averageRes[i] =
+                averageRes[i + 1] =
+                averageRes[i + 2] =
+                  averageFormula;
+            }
+            if (f2) {
+              lumHist[Math.floor((255 - r + (255 - g) + (255 - b)) / 3)]++;
+              lumRes[i] = 255 - r;
+              lumRes[i + 1] = 255 - g;
+              lumRes[i + 2] = 255 - b;
+              weightedHist[Math.floor((255 - r + (255 - g) + (255 - b)) / 3)]++;
+              weightedRes[i] = 255 - r;
+              weightedRes[i + 1] = 255 - g;
+              weightedRes[i + 2] = 255 - b;
+              averageHist[Math.floor((255 - r + (255 - g) + (255 - b)) / 3)]++;
+              averageRes[i] = 255 - r;
+              averageRes[i + 1] = 255 - g;
+              averageRes[i + 2] = 255 - b;
+            }
+            if (f3) {
+              // Luminository method & Gray Historgram
+              lumHist[Math.floor(255 - lumFormula)]++;
+              lumRes[i] = lumRes[i + 1] = lumRes[i + 2] = 255 - lumFormula;
+              lumRes[i + 3] = a;
+              // Weighted method & Gray Histogram
+              weightedHist[Math.floor(255 - weightedFormula)]++;
+              weightedRes[i] =
+                weightedRes[i + 1] =
+                weightedRes[i + 2] =
+                  255 - weightedFormula;
+              // Average method & Gray Histogram
+              averageHist[Math.floor(255 - averageFormula)]++;
+              averageRes[i] =
+                averageRes[i + 1] =
+                averageRes[i + 2] =
+                  255 - averageFormula;
+            }
+            if (f4) {
+              // Calc Bin
+              let lumBin =
+                lumFormula >= threshholdElm.value ? 255 : lumFormula < threshholdElm.value && 0;
+              let weightedBin =
+                weightedFormula >= threshholdElm.value
+                  ? 255
+                  : weightedFormula < threshholdElm.value && 0;
+              let averageBin =
+                averageFormula >= threshholdElm.value
+                  ? 255
+                  : averageFormula < threshholdElm.value && 0;
+              // Update Histogram
+              lumHist[lumBin]++;
+              weightedHist[weightedBin]++;
+              averageHist[averageBin]++;
+              // Process Image Data
+              lumRes[i] = lumRes[i + 1] = lumRes[i + 2] = lumBin;
+              weightedRes[i] =
+                weightedRes[i + 1] =
+                weightedRes[i + 2] =
+                  weightedBin;
+              averageRes[i] =
+                averageRes[i + 1] =
+                averageRes[i + 2] =
+                  averageBin;
+            }
+          }
+
+          lumContext.putImageData(lumData, 0, 0);
+          weightedContext.putImageData(weightedData, 0, 0);
+          averageContext.putImageData(averageData, 0, 0);
+          let hWidth = 120;
+          let hHeight = 80;
+          let padding = 10;
+          drawEnhancedHistogram(rHist, 10, 10, hWidth, hHeight, "red");
+          drawEnhancedHistogram(
+            gHist,
+            10,
+            10 + hHeight + padding,
+            hWidth,
+            hHeight,
+            "green"
+          );
+          drawEnhancedHistogram(
+            bHist,
+            10,
+            10 + (hHeight + padding) * 2,
+            hWidth,
+            hHeight,
+            "blue"
+          );
+
+          drawGreyHistogram(lumHist, lumContext);
+          drawGreyHistogram(weightedHist, weightedContext);
+          drawGreyHistogram(averageHist, averageContext);
+        }
+
+        requestAnimationFrame(draw);
+      }
+      function drawGreyHistogram(histData, context) {
+        let maxVal = Math.max(...histData);
+        if (maxVal === 0) return;
+
+        let x = 10;
+        let y = 10;
+        let w = 120;
+        let h = 60;
+
+        context.fillStyle = "rgba(0, 0, 0, 0.5)";
+        context.fillRect(x, y, w, h);
+
+        context.strokeStyle = "rgba(255, 255, 255, 0.9)";
+        context.lineWidth = 0.15;
+        context.beginPath();
+
+        for (let i = 0; i < 256; i++) {
+          let barHeight = (histData[i] / maxVal) * h;
+
+          let px = x + i * (w / 256);
+
+          context.moveTo(px, y + h);
+          context.lineTo(px, y + h - barHeight);
+        }
+
+        context.stroke();
+        context.strokeRect(x, y, w, h);
+      }
+      function drawEnhancedHistogram(histData, x, y, w, h, color) {
+        let maxVal = Math.max(...histData);
+        if (maxVal === 0) return;
+
+        histContext.fillStyle = "rgba(0, 0, 0, 0.5)";
+        histContext.fillRect(x, y, w, h);
+
+        histContext.beginPath();
+
+        for (let i = 0; i < 256; i++) {
+          let px = x + i * (w / 256);
+          let barHeight = y + h - (histData[i] / maxVal) * h;
+          histContext.moveTo(px, y + h);
+          histContext.lineTo(px, barHeight);
+        }
+
+        histContext.lineTo(x + w, y + h);
+        histContext.closePath();
+
+        histContext.fillStyle = color;
+        histContext.lineWidth = 1;
+        histContext.fill();
+
+        histContext.strokeStyle = color;
+        histContext.stroke();
+      }
+    </script>
+  </body>
+</html>
