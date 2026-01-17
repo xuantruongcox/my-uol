@@ -186,7 +186,7 @@
       let rHist = new Array(256).fill(0);
       let gHist = new Array(256).fill(0);
       let bHist = new Array(256).fill(0);
-      let f1 = false;
+      let f1 = true;
       let f2 = false;
       let f3 = false;
       let f4 = false;
@@ -250,7 +250,7 @@
             gHist[g]++;
             bHist[b]++;
             // Formulars
-            let lumFormula = 0.2126 * r + 0.7152 * g + 0.0722;
+            let lumFormula = 0.2126 * r + 0.7152 * g + 0.0722 * b;
             let weightedFormula = 0.299 * r + 0.587 * g + 0.114 * b;
             let averageFormula = (r + g + b) / 3;
 
@@ -326,7 +326,9 @@
             if (f4) {
               // Calc Bin
               let lumBin =
-                lumFormula >= threshholdElm.value ? 255 : lumFormula < threshholdElm.value && 0;
+                lumFormula >= threshholdElm.value
+                  ? 255
+                  : lumFormula < threshholdElm.value && 0;
               let weightedBin =
                 weightedFormula >= threshholdElm.value
                   ? 255
